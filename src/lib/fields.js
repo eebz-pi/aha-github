@@ -1,4 +1,4 @@
-import { IDENTIFIER } from "../extension";
+import {IDENTIFIER} from "../extension";
 
 const PULL_REQUESTS_FIELD = "pullRequests";
 const BRANCHES_FIELD = "branches";
@@ -105,13 +105,17 @@ async function linkPullRequestToRecord(pr, record) {
  * @param {import("./github").PrForLink} pr
  */
 async function linkPullRequest(pr) {
-  const record = await referenceToRecord(pr.title);
+  const records = await referencesToRecords(pr.title);
 
-  if (record) {
-    await linkPullRequestToRecord(pr, record);
+  if (records) {
+    for(let i = 0; i < records.length; ++i) {
+      const record = records[i];
+
+      await linkPullRequestToRecord(pr, record);
+    }
   }
 
-  return record;
+  return records;
 }
 
 /**
@@ -185,10 +189,10 @@ async function linkBranchToRecord(branchName, repoUrl, record) {
  * @param {string} repoUrl
  */
 async function linkBranch(branchName, repoUrl) {
-  const record = await referenceToRecord(branchName);
-  if (record) {
-    await linkBranchToRecord(branchName, repoUrl, record);
-    return record;
+  const records = await referencesToRecords(branchName);
+  if (records) {
+    await Promise.all(records.map(record => linkBranchToRecord(branchName, repoUrl, record)));
+    return records;
   }
 }
 
@@ -201,54 +205,61 @@ async function unlinkBranches(record) {
 
 /**
  * @param {string} str
- * @returns {Promise<(Aha.HasExtensionFields & Aha.ReferenceInterface)|null>}
+ * @returns {Promise<([Aha.HasExtensionFields & Aha.ReferenceInterface])|null>}
  */
-export async function referenceToRecord(str) {
-  const ahaReference = extractReference(str);
-  if (!ahaReference) {
-    return null;
-  }
-  console.log(
-    `Searching for ${ahaReference.type} ref ${ahaReference.referenceNum}`
-  );
-
-  const RecordClass = aha.models[ahaReference.type];
-  if (!RecordClass) {
-    console.log(`Unknown record type ${ahaReference.type}`);
+export async function referencesToRecords(str) {
+  const ahaReferences = extractReferences(str);
+  if (!ahaReferences) {
     return null;
   }
 
-  return await RecordClass.select("id", "referenceNum").find(
-    ahaReference.referenceNum
-  );
+  const ret = [];
+  for(let i = 0; i < ahaReferences.length; ++i) {
+    const ahaReference = ahaReferences[i];
+
+    console.log(
+      `Searching for ${ahaReference.type} ref ${ahaReference.referenceNum}`
+    );
+
+    const RecordClass = aha.models[ahaReference.type];
+    if (!RecordClass) {
+      console.log(`Unknown record type ${ahaReference.type}`);
+      return null;
+    }
+
+    ret[i] = await RecordClass.select("id", "referenceNum").find(
+      ahaReference.referenceNum
+    )
+  }
+  return ret;
 }
 
 /**
  * @param {string} name
  */
-function extractReference(name) {
+function extractReferences(name) {
   let matches;
 
   // Requirement
-  if ((matches = name.match(/[a-z]{1,10}-[0-9]+-[0-9]+/i))) {
-    return {
+  if ((matches = name.match(/[a-z]{1,10}-[0-9]+-[0-9]+/gi))) {
+    return matches.map(match => ({
       type: "Requirement",
-      referenceNum: matches[0],
-    };
+      referenceNum: match,
+    }));
   }
   // Epic
-  if ((matches = name.match(/[a-z]{1,10}-E-[0-9]+/i))) {
-    return {
+  if ((matches = name.match(/[a-z]{1,10}-E-[0-9]+/gi))) {
+    return matches.map(match => ({
       type: "Epic",
-      referenceNum: matches[0],
-    };
+      referenceNum: match,
+    }));
   }
   // Feature
-  if ((matches = name.match(/[a-z]{1,10}-[0-9]+/i))) {
-    return {
+  if ((matches = name.match(/[a-z]{1,10}-[0-9]+/gi))) {
+    return matches.map(match => ({
       type: "Feature",
-      referenceNum: matches[0],
-    };
+      referenceNum: match,
+    }));
   }
 
   return null;

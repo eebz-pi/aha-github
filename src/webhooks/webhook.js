@@ -1,10 +1,11 @@
 import {
   linkPullRequest,
   linkBranch,
-  referenceToRecord,
+  referencesToRecords,
 } from "../lib/fields.js";
+import singleOrArrayMap from "../lib/singleOrArrayMap"
 
-aha.on("webhook", async ({ headers, payload }) => {
+aha.on("webhook", async ({headers, payload}) => {
   const event = headers.HTTP_X_GITHUB_EVENT;
 
   console.log(`Received webhook '${event}' ${payload.action || ""}`);
@@ -46,8 +47,8 @@ async function handleCreateBranch(payload) {
     return;
   }
 
-  const record = await linkBranch(payload.ref, payload.repository.html_url);
-  await triggerEvent("create", payload, record);
+  const records = await linkBranch(payload.ref, payload.repository.html_url);
+  await triggerEvent("create", payload, records);
 }
 
 /**
@@ -56,14 +57,19 @@ async function handleCreateBranch(payload) {
  * @param {*} referenceText
  */
 async function triggerEvent(event, payload, referenceText) {
-  let record = referenceText;
-
   if (typeof referenceText === "string") {
-    record = await referenceToRecord(referenceText);
-  }
+    const records = await referencesToRecords(referenceText);
 
-  aha.triggerServer(`aha-develop.github.${event}.${payload.action}`, {
-    record,
-    payload,
-  });
+    records.forEach(record => aha.triggerServer(`aha-develop.github.${event}.${payload.action}`, {
+      record,
+      payload,
+    }))
+  } else {
+    const callback = record => aha.triggerServer(`aha-develop.github.${event}.${payload.action}`, {
+      record,
+      payload,
+    })
+
+    singleOrArrayMap(referenceText, callback)
+  }
 }
